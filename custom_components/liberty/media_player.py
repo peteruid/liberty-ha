@@ -16,7 +16,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import AVAILABILITY_TOPIC, DOMAIN, TOPIC_PREFIX
+from .const import AVAILABILITY_TOPIC, DOMAIN, ICON_DATA_URI, TOPIC_PREFIX
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -104,10 +104,7 @@ class LibertyMediaPlayer(MediaPlayerEntity):
         self._sw_version = config.get("sw_version")
 
         self._attr_unique_id = f"liberty_{room_id}_media_player"
-        self._attr_entity_picture = (
-            "https://raw.githubusercontent.com/peteruid/liberty-ha"
-            "/main/custom_components/liberty/icon.png"
-        )
+        self._attr_entity_picture = ICON_DATA_URI
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, room_id)},
             name=self._room_name,
