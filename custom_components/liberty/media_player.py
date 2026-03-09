@@ -13,6 +13,7 @@ from homeassistant.components.media_player import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -59,6 +60,11 @@ async def async_setup_entry(
                 _LOGGER.info("Room removed: %s", room_id)
                 hass.async_create_task(entities[room_id].async_remove())
                 del entities[room_id]
+                # Remove the device from the registry so it doesn't linger
+                registry = dr.async_get(hass)
+                device = registry.async_get_device(identifiers={(DOMAIN, room_id)})
+                if device:
+                    registry.async_remove_device(device.id)
             return
 
         try:
