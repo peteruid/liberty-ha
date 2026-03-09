@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Liberty",
+        "description": "Set up Liberty speaker integration.\n\nRequires the MQTT integration to be configured and the Liberty MQTT bridge to be running."
+      }
+    },
+    "abort": {
+      "already_configured": "Liberty is already configured."
+    }
+  }
+}
