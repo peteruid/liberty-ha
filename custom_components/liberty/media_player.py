@@ -104,10 +104,9 @@ class LibertyMediaPlayer(MediaPlayerEntity):
         self._sw_version = config.get("sw_version")
 
         self._attr_unique_id = f"liberty_{room_id}_media_player"
-        self._attr_icon = (
-            "mdi:speaker-multiple"
-            if self._model == "Virtual Space"
-            else "mdi:speaker-wireless"
+        self._attr_entity_picture = (
+            "https://raw.githubusercontent.com/peteruid/liberty-ha"
+            "/main/custom_components/liberty/icon.png"
         )
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, room_id)},
