@@ -30,15 +30,11 @@ class LibertyConfigFlow(ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> LibertyOptionsFlow:
         """Return the options flow handler."""
-        return LibertyOptionsFlow(config_entry)
+        return LibertyOptionsFlow()
 
 
 class LibertyOptionsFlow(OptionsFlow):
     """Handle Liberty options."""
-
-    def __init__(self, config_entry: ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
