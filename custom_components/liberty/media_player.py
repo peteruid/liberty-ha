@@ -111,6 +111,11 @@ class LibertyMediaPlayer(MediaPlayerEntity):
         self._model = config.get("model", "Speaker")
         self._sw_version = config.get("sw_version")
 
+        self._attr_icon = (
+            "mdi:speaker-multiple"
+            if config.get("is_virtual")
+            else "mdi:speaker-wireless"
+        )
         self._attr_unique_id = f"liberty_{room_id}_media_player"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, room_id)},
