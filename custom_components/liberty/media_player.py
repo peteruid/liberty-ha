@@ -34,6 +34,7 @@ SUPPORTED_FEATURES = (
     | MediaPlayerEntityFeature.NEXT_TRACK
     | MediaPlayerEntityFeature.PREVIOUS_TRACK
     | MediaPlayerEntityFeature.PLAY_MEDIA
+    | MediaPlayerEntityFeature.SHUFFLE_SET
 )
 
 
@@ -441,6 +442,27 @@ class LibertyMediaPlayer(MediaPlayerEntity):
                 "media_content_type": media_type,
                 "media_content_id": media_id,
             },
+            blocking=True,
+        )
+
+    async def async_set_shuffle(self, shuffle: bool) -> None:
+        """Set shuffle mode via the configured Spotify entity."""
+        entry = self.hass.data.get(DOMAIN, {}).get("entry")
+        if entry is None:
+            return
+
+        spotify_entity_id = entry.options.get(CONF_SPOTIFY_ENTITY, "")
+        if not spotify_entity_id:
+            _LOGGER.warning(
+                "No Spotify entity configured. Go to Settings > Integrations "
+                "> Liberty > Configure to select your Spotify media player."
+            )
+            return
+
+        await self.hass.services.async_call(
+            "media_player",
+            "shuffle_set",
+            {"entity_id": spotify_entity_id, "shuffle": shuffle},
             blocking=True,
         )
 
