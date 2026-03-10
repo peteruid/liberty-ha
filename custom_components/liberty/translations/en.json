@@ -9,5 +9,16 @@
     "abort": {
       "already_configured": "Liberty is already configured."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Liberty Options",
+        "description": "Configure Spotify integration for play_media support.\n\nSelect your Spotify media player entity to enable playing Spotify URIs directly on Liberty speakers.",
+        "data": {
+          "spotify_entity": "Spotify media player"
+        }
+      }
+    }
   }
 }

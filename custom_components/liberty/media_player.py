@@ -1,6 +1,7 @@
 """Media player platform for Liberty speakers."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -20,7 +21,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import AVAILABILITY_TOPIC, DOMAIN, TOPIC_PREFIX
+from .const import AVAILABILITY_TOPIC, CONF_SPOTIFY_ENTITY, DOMAIN, TOPIC_PREFIX
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ SUPPORTED_FEATURES = (
     | MediaPlayerEntityFeature.VOLUME_MUTE
     | MediaPlayerEntityFeature.NEXT_TRACK
     | MediaPlayerEntityFeature.PREVIOUS_TRACK
+    | MediaPlayerEntityFeature.PLAY_MEDIA
 )
 
 
@@ -377,6 +379,69 @@ class LibertyMediaPlayer(MediaPlayerEntity):
             f"{TOPIC_PREFIX}/{self._room_id}/previous_track",
             "PRESS",
             qos=1,
+        )
+
+    async def async_play_media(
+        self, media_type: str, media_id: str, **kwargs: Any
+    ) -> None:
+        """Play media via the configured Spotify entity.
+
+        For spotify: URIs, selects this room as the Spotify Connect target,
+        then starts playback through the Spotify integration.
+        """
+        if not media_id.startswith("spotify:"):
+            _LOGGER.warning(
+                "Liberty only supports spotify: URIs for play_media, got: %s",
+                media_id,
+            )
+            return
+
+        entry = self.hass.data.get(DOMAIN, {}).get("entry")
+        if entry is None:
+            _LOGGER.error("Liberty config entry not found")
+            return
+
+        spotify_entity_id = entry.options.get(CONF_SPOTIFY_ENTITY, "")
+        if not spotify_entity_id:
+            _LOGGER.warning(
+                "No Spotify entity configured. Go to Settings > Integrations "
+                "> Liberty > Configure to select your Spotify media player."
+            )
+            return
+
+        spotify_state = self.hass.states.get(spotify_entity_id)
+        if spotify_state is None:
+            _LOGGER.error(
+                "Configured Spotify entity %s not found", spotify_entity_id
+            )
+            return
+        if spotify_state.state == "unavailable":
+            _LOGGER.error(
+                "Configured Spotify entity %s is unavailable", spotify_entity_id
+            )
+            return
+
+        # Select this room as the Spotify Connect target
+        await self.hass.services.async_call(
+            "media_player",
+            "select_source",
+            {"entity_id": spotify_entity_id, "source": self._room_name},
+            blocking=True,
+        )
+
+        # Wait for Spotify to switch playback target
+        await asyncio.sleep(2)
+
+        # Start playback on the Spotify entity
+        await self.hass.services.async_call(
+            "media_player",
+            "play_media",
+            {
+                "entity_id": spotify_entity_id,
+                "media_content_type": media_type,
+                "media_content_id": media_id,
+            },
+            blocking=True,
         )
 
     # -- Config updates --
