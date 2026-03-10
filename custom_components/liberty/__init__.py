@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 
-PLATFORMS = [Platform.MEDIA_PLAYER]
+PLATFORMS = [Platform.MEDIA_PLAYER, Platform.BUTTON]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
