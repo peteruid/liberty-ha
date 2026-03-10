@@ -97,6 +97,7 @@ class LibertyMediaPlayer(MediaPlayerEntity):
 
     _attr_has_entity_name = True
     _attr_name = None  # Use device name as entity name
+    _attr_icon = "mdi:speaker-wireless"
     _attr_supported_features = SUPPORTED_FEATURES
 
     def __init__(
