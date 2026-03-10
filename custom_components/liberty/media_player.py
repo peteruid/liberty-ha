@@ -5,6 +5,8 @@ import json
 import logging
 from typing import Any
 
+from datetime import datetime
+
 from homeassistant.components import mqtt
 from homeassistant.components.media_player import (
     MediaPlayerEntity,
@@ -12,6 +14,7 @@ from homeassistant.components.media_player import (
     MediaPlayerState,
 )
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.util import dt as dt_util
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -193,6 +196,13 @@ class LibertyMediaPlayer(MediaPlayerEntity):
     def media_position(self) -> int | None:
         """Position of current playing media in seconds."""
         return self._media_position
+
+    @property
+    def media_position_updated_at(self) -> datetime | None:
+        """When the position was last updated."""
+        if self._media_position is not None:
+            return dt_util.utcnow()
+        return None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
