@@ -90,6 +90,25 @@ async def async_setup_entry(
     )
     entry.async_on_unload(unsub)
 
+    # After retained messages settle, remove orphaned devices from the registry
+    @callback
+    def cleanup_orphaned_devices(_now=None) -> None:
+        """Remove devices that no longer have a matching room config."""
+        registry = dr.async_get(hass)
+        for device in list(registry.devices.values()):
+            # Only consider devices owned by this integration
+            if not any(ident[0] == DOMAIN for ident in device.identifiers):
+                continue
+            # Extract room_id from identifiers
+            room_ids = [ident[1] for ident in device.identifiers if ident[0] == DOMAIN]
+            # Remove if none of this device's room IDs are in the active entities
+            if not any(rid in entities for rid in room_ids):
+                _LOGGER.info("Removing orphaned device: %s (%s)", device.name, room_ids)
+                registry.async_remove_device(device.id)
+
+    from homeassistant.helpers.event import async_call_later
+    entry.async_on_unload(async_call_later(hass, 5, cleanup_orphaned_devices))
+
 
 class LibertyMediaPlayer(MediaPlayerEntity):
     """Representation of a Liberty speaker room as a media player."""
