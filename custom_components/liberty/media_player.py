@@ -144,6 +144,7 @@ class LibertyMediaPlayer(MediaPlayerEntity):
         self._media_source: str | None = None
         self._media_duration: int | None = None
         self._media_position: int | None = None
+        self._media_position_updated_at: datetime | None = None
         self._audio_format: str | None = None
 
         self._unsubs: list = []
@@ -202,10 +203,15 @@ class LibertyMediaPlayer(MediaPlayerEntity):
 
     @property
     def media_position_updated_at(self) -> datetime | None:
-        """When the position was last updated."""
-        if self._media_position is not None:
-            return dt_util.utcnow()
-        return None
+        """When the position was last updated.
+
+        Returns the timestamp captured when we last received a position, so HA
+        interpolates the progress bar forward on its own. Returning utcnow()
+        here would reset the anchor on every read and freeze the bar between
+        updates — which is why the bridge used to have to republish position
+        every second.
+        """
+        return self._media_position_updated_at
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -269,7 +275,13 @@ class LibertyMediaPlayer(MediaPlayerEntity):
         self._media_album = data.get("album")
         self._media_source = data.get("source")
         self._media_duration = data.get("duration")
-        self._media_position = data.get("elapsed")
+        # Anchor the position to "now" each time we receive a state update. The
+        # bridge only publishes on real changes (play/pause, track, seek), so HA
+        # interpolates the progress bar between updates from this timestamp.
+        new_position = data.get("elapsed")
+        if new_position != self._media_position or self._media_position_updated_at is None:
+            self._media_position_updated_at = dt_util.utcnow()
+        self._media_position = new_position
         self._audio_format = data.get("audio_format")
 
         self.async_write_ha_state()
