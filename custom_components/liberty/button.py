@@ -44,12 +44,21 @@ class LibertyCleanupButton(ButtonEntity):
         )
 
     async def async_press(self) -> None:
-        """Handle button press — remove orphaned devices."""
-        entities = self.hass.data.get(DOMAIN, {}).get("entities", {})
+        """Handle button press — remove orphaned and withdrawn devices.
 
-        if not entities:
+        Rooms the app has withdrawn (empty config) are kept as unavailable
+        devices on purpose, so their ids survive a power cycle or an app
+        restart. This button is the explicit act that actually deletes them,
+        along with any device that has no entity at all.
+        """
+        data = self.hass.data.get(DOMAIN, {})
+        entities = data.get("entities", {})
+        remove_room = data.get("remove_room")
+
+        live = [rid for rid, e in entities.items() if not e.config_withdrawn]
+        if not live:
             _LOGGER.warning(
-                "No active rooms discovered — is the Liberty app running? "
+                "No live rooms — is the Liberty app running? "
                 "Skipping cleanup to avoid removing all devices"
             )
             return
@@ -69,12 +78,16 @@ class LibertyCleanupButton(ButtonEntity):
             if "bridge" in room_ids:
                 continue
 
-            # Remove if none of this device's room IDs have active entities
-            if not any(rid in entities for rid in room_ids):
-                _LOGGER.info(
-                    "Removing stale device: %s (%s)", device.name, room_ids
-                )
+            # Keep any device that still has a live (non-withdrawn) entity
+            if any(rid in live for rid in room_ids):
+                continue
+
+            _LOGGER.info("Removing stale device: %s (%s)", device.name, room_ids)
+            if remove_room is not None:
+                for rid in room_ids:
+                    remove_room(rid)
+            else:
                 registry.async_remove_device(device.id)
-                removed += 1
+            removed += 1
 
         _LOGGER.info("Cleanup complete — removed %d stale device(s)", removed)

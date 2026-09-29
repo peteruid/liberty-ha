@@ -49,8 +49,36 @@ async def async_setup_entry(
     hass.data[DOMAIN]["entities"] = entities
 
     @callback
+    def remove_room(room_id: str) -> None:
+        """Delete a room's entity and device. Explicit removal only."""
+        entity = entities.pop(room_id, None)
+        if entity is not None:
+            hass.async_create_task(entity.async_remove())
+        registry = dr.async_get(hass)
+        device = registry.async_get_device(identifiers={(DOMAIN, room_id)})
+        if device:
+            registry.async_remove_device(device.id)
+
+    hass.data[DOMAIN]["remove_room"] = remove_room
+
+    @callback
     def handle_config(msg: mqtt.ReceiveMessage) -> None:
-        """Handle room config messages for discovery."""
+        """Handle room config messages for discovery.
+
+        Identity has to survive transients. Each entity's unique_id and its
+        device's identifiers derive from the room id, which is stable, so as
+        long as the device is never deleted HA keeps the same device_id and
+        entity_id across app restarts, HA restarts and speakers being
+        powered off. Deleting the device on an empty config — what this used
+        to do — threw that away: the next config created a new device_id
+        (silently orphaning every device-based automation) and, racing the
+        asynchronous entity removal, could land the entity on a "_2" id.
+
+        So an empty config now *withdraws* a room: the entity goes
+        unavailable and the device stays. Actual deletion takes an explicit
+        {"removed": true} from the app's clean-up action, the Clean Up Stale
+        Devices button, or deleting the device in the HA UI.
+        """
         parts = msg.topic.split("/")
         if len(parts) != 3:
             return
@@ -60,23 +88,28 @@ async def async_setup_entry(
         if room_id == "bridge":
             return
 
-        # Empty payload = room removed
+        # Empty payload = room withdrawn (not deleted)
         if not msg.payload:
             if room_id in entities:
-                _LOGGER.info("Room removed: %s", room_id)
-                hass.async_create_task(entities[room_id].async_remove())
-                del entities[room_id]
-                # Remove the device from the registry so it doesn't linger
-                registry = dr.async_get(hass)
-                device = registry.async_get_device(identifiers={(DOMAIN, room_id)})
-                if device:
-                    registry.async_remove_device(device.id)
+                _LOGGER.info("Room withdrawn: %s — marking unavailable", room_id)
+                entities[room_id].set_config_withdrawn(True)
             return
 
         try:
             config = json.loads(msg.payload)
         except (json.JSONDecodeError, TypeError):
             _LOGGER.warning("Invalid config payload for room %s", room_id)
+            return
+
+        # Explicit deletion marker from the app's clean-up action. Consume
+        # the retained marker afterwards so it doesn't replay on every HA
+        # restart against a room that no longer exists.
+        if config.get("removed"):
+            _LOGGER.info("Room removed: %s", room_id)
+            remove_room(room_id)
+            hass.async_create_task(
+                mqtt.async_publish(hass, msg.topic, "", qos=1, retain=True)
+            )
             return
 
         if room_id not in entities:
@@ -136,6 +169,10 @@ class LibertyMediaPlayer(MediaPlayerEntity):
         self._volume: float | None = None  # 0.0 .. 1.0
         self._muted: bool = False
         self._available: bool = False
+        # Set when the app withdrew this room's config (empty retained
+        # payload). The device and entity survive; we just go unavailable
+        # until a config comes back.
+        self._config_withdrawn: bool = False
 
         # Media info
         self._media_title: str | None = None
@@ -154,7 +191,21 @@ class LibertyMediaPlayer(MediaPlayerEntity):
     @property
     def available(self) -> bool:
         """Return True if the entity is available."""
-        return self._available
+        return self._available and not self._config_withdrawn
+
+    @property
+    def config_withdrawn(self) -> bool:
+        """True while the app has withdrawn this room's config."""
+        return self._config_withdrawn
+
+    @callback
+    def set_config_withdrawn(self, withdrawn: bool) -> None:
+        """Mark the room's config withdrawn/restored without touching identity."""
+        if self._config_withdrawn == withdrawn:
+            return
+        self._config_withdrawn = withdrawn
+        if self.hass is not None and self.entity_id:
+            self.async_write_ha_state()
 
     @property
     def state(self) -> MediaPlayerState:
@@ -483,6 +534,8 @@ class LibertyMediaPlayer(MediaPlayerEntity):
     @callback
     def update_config(self, config: dict[str, Any]) -> None:
         """Update entity from new config payload."""
+        # A config arriving at all means the room is back.
+        self.set_config_withdrawn(False)
         name = config.get("name")
         if name and name != self._room_name:
             self._room_name = name
