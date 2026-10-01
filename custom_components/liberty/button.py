@@ -6,7 +6,6 @@ import logging
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -53,9 +52,12 @@ class LibertyCleanupButton(ButtonEntity):
         """
         data = self.hass.data.get(DOMAIN, {})
         entities = data.get("entities", {})
-        remove_room = data.get("remove_room")
+        remove_devices_not_in = data.get("remove_devices_not_in")
+        if remove_devices_not_in is None:
+            _LOGGER.warning("Media player platform not ready; try again shortly")
+            return
 
-        live = [rid for rid, e in entities.items() if not e.config_withdrawn]
+        live = {rid for rid, e in entities.items() if not e.config_withdrawn}
         if not live:
             _LOGGER.warning(
                 "No live rooms — is the Liberty app running? "
@@ -63,31 +65,5 @@ class LibertyCleanupButton(ButtonEntity):
             )
             return
 
-        registry = dr.async_get(self.hass)
-        removed = 0
-
-        for device in list(registry.devices.values()):
-            if not any(ident[0] == DOMAIN for ident in device.identifiers):
-                continue
-
-            room_ids = [
-                ident[1] for ident in device.identifiers if ident[0] == DOMAIN
-            ]
-
-            # Skip the bridge device itself
-            if "bridge" in room_ids:
-                continue
-
-            # Keep any device that still has a live (non-withdrawn) entity
-            if any(rid in live for rid in room_ids):
-                continue
-
-            _LOGGER.info("Removing stale device: %s (%s)", device.name, room_ids)
-            if remove_room is not None:
-                for rid in room_ids:
-                    remove_room(rid)
-            else:
-                registry.async_remove_device(device.id)
-            removed += 1
-
-        _LOGGER.info("Cleanup complete — removed %d stale device(s)", removed)
+        removed = remove_devices_not_in(live)
+        _LOGGER.info("Cleanup complete — removed %d stale device(s)", len(removed))

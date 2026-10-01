@@ -62,6 +62,63 @@ async def async_setup_entry(
     hass.data[DOMAIN]["remove_room"] = remove_room
 
     @callback
+    def remove_devices_not_in(keep: set[str]) -> list[str]:
+        """Delete every Liberty device whose room ids all fall outside `keep`.
+
+        HA owns the device registry, so this is the one place staleness is
+        decided. The app's clean-up action and the Clean Up Stale Devices
+        button both route here. Returns the names removed.
+        """
+        registry = dr.async_get(hass)
+        removed: list[str] = []
+        for device in list(registry.devices.values()):
+            room_ids = [ident[1] for ident in device.identifiers if ident[0] == DOMAIN]
+            if not room_ids or "bridge" in room_ids:
+                continue
+            if any(rid in keep for rid in room_ids):
+                continue
+            _LOGGER.info("Removing stale device: %s (%s)", device.name, room_ids)
+            removed.append(device.name or room_ids[0])
+            for rid in room_ids:
+                remove_room(rid)
+        return removed
+
+    hass.data[DOMAIN]["remove_devices_not_in"] = remove_devices_not_in
+
+    @callback
+    def handle_cleanup(msg: mqtt.ReceiveMessage) -> None:
+        """App-initiated clean-up.
+
+        The app sends the ids of the rooms it currently has; we remove every
+        device not among them and report the count back on
+        liberty/bridge/cleanup_result. The app can't make this call itself:
+        a withdrawn room's config is gone from the broker, but its device is
+        still here, so only the registry knows what's stale.
+        """
+        try:
+            payload = json.loads(msg.payload)
+            keep = set(payload.get("rooms", []))
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            _LOGGER.warning("Invalid cleanup payload: %s", msg.payload)
+            return
+        if not keep:
+            _LOGGER.warning(
+                "Cleanup request listed no rooms — refusing to remove everything"
+            )
+            removed: list[str] = []
+        else:
+            removed = remove_devices_not_in(keep)
+        hass.async_create_task(
+            mqtt.async_publish(
+                hass,
+                f"{TOPIC_PREFIX}/bridge/cleanup_result",
+                json.dumps({"removed": len(removed), "names": removed}),
+                qos=1,
+                retain=False,
+            )
+        )
+
+    @callback
     def handle_config(msg: mqtt.ReceiveMessage) -> None:
         """Handle room config messages for discovery.
 
@@ -128,6 +185,12 @@ async def async_setup_entry(
         hass, f"{TOPIC_PREFIX}/+/config", handle_config, qos=1
     )
     entry.async_on_unload(unsub)
+
+    # App-initiated clean-up requests
+    unsub_cleanup = await mqtt.async_subscribe(
+        hass, f"{TOPIC_PREFIX}/bridge/cleanup", handle_cleanup, qos=1
+    )
+    entry.async_on_unload(unsub_cleanup)
 
 
 
